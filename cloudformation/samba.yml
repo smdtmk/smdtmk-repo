@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  #事前に確認したグローバルIPを入力する
+  MyIP:
+    Type: String
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+      - Key: Name
+        Value: VPC-Samba-Server
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: IGW-Samba-Server
+
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: PublicSubnet-Samba-Server
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: PublicRouteTable-Samba-Server
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  SambaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: SambaSecurityGroup-Samba-Server
+      GroupDescription: Allow Samba traffic
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 445
+        ToPort: 445
+        CidrIp: !Sub ${MyIP}/32
+      - IpProtocol: tcp
+        FromPort: 139
+        ToPort: 139
+        CidrIp: !Sub ${MyIP}/32
+      - IpProtocol: tcp
+        FromPort: 137
+        ToPort: 137
+        CidrIp: !Sub ${MyIP}/32
+      - IpProtocol: tcp
+        FromPort: 3389
+        ToPort: 3389
+        CidrIp: !Sub ${MyIP}/32
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Sub ${MyIP}/32
+      Tags:
+      - Key: Name
+        Value: SambaSecurityGroup-Samba-Server
+
+  SambaInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  SambaInstanceProfile:
+    DependsOn: SambaInstanceRole
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - !Ref SambaInstanceRole
+
+  SambaInstance:
+    DependsOn: SambaInstanceProfile
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0f9fe1d9214628296
+      InstanceType: t2.micro
+      BlockDeviceMappings:
+      - DeviceName: /dev/sda1
+        Ebs:
+          VolumeSize: 8
+          VolumeType: gp2
+      IamInstanceProfile: SambaInstanceProfile
+      UserData: !Base64 |
+        #!/bin/bash
+        sudo dnf update -y
+        sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+        sudo systemctl start amazon-ssm-agent
+      KeyName: samba-server
+      SecurityGroupIds:
+      - !Ref SambaSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      Tags:
+      - Key: Name
+        Value: Samba-Server
+
+  SambaServerEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref SambaInstance
