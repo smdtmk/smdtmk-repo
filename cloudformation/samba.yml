@@ -1,10 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Parameters:
-  #事前に確認したグローバルIPを入力する
-  MyIP:
-    Type: String
-
 Resources:
   VPC:
     Type: AWS::EC2::VPC
@@ -72,23 +67,7 @@ Resources:
       - IpProtocol: tcp
         FromPort: 445
         ToPort: 445
-        CidrIp: !Sub ${MyIP}/32
-      - IpProtocol: tcp
-        FromPort: 139
-        ToPort: 139
-        CidrIp: !Sub ${MyIP}/32
-      - IpProtocol: tcp
-        FromPort: 137
-        ToPort: 137
-        CidrIp: !Sub ${MyIP}/32
-      - IpProtocol: tcp
-        FromPort: 3389
-        ToPort: 3389
-        CidrIp: !Sub ${MyIP}/32
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: !Sub ${MyIP}/32
+        CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
         Value: SambaSecurityGroup-Samba-Server
@@ -124,17 +103,16 @@ Resources:
       ImageId: ami-0f9fe1d9214628296
       InstanceType: t2.micro
       BlockDeviceMappings:
-      - DeviceName: /dev/sda1
+      - DeviceName: /dev/sdf
         Ebs:
-          VolumeSize: 8
-          VolumeType: gp2
-      IamInstanceProfile: SambaInstanceProfile
+          VolumeSize: 10
+          VolumeType: gp3
+      IamInstanceProfile: !Ref SambaInstanceProfile
       UserData: !Base64 |
         #!/bin/bash
         sudo dnf update -y
         sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
         sudo systemctl start amazon-ssm-agent
-      KeyName: samba-server
       SecurityGroupIds:
       - !Ref SambaSecurityGroup
       SubnetId: !Ref PublicSubnet
