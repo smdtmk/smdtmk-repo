@@ -1,2 +1,7 @@
 node_modules
 .DS_Store
+node_modules/
+.gitignore
+package-lock.json
+package-lock.json
+README copy.md
